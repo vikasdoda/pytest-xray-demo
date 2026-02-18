@@ -2,7 +2,7 @@ name: CI - Pytest to Xray
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 jobs:
@@ -23,23 +23,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Pytest (JUnit XML)
+      - name: Run Pytest (generate JUnit XML)
         run: |
           mkdir -p results
           pytest --junitxml=results/junit.xml
 
+      - name: Debug - show JUnit file
+        run: |
+          echo "=== Repo root ==="
+          ls -la
+          echo "=== results folder ==="
+          ls -la results || true
+          test -f results/junit.xml && echo "FOUND junit.xml" || (echo "MISSING junit.xml" && exit 1)
+          echo "=== junit.xml size (bytes) ==="
+          wc -c results/junit.xml
+          echo "=== junit.xml first 30 lines ==="
+          head -n 30 results/junit.xml
+
       - name: Authenticate to Xray Cloud (get token)
         id: xray_auth
         run: |
-          TOKEN=$(curl -s -H "Content-Type: application/json" \
+          TOKEN=$(curl --fail-with-body -sS -H "Content-Type: application/json" \
             -X POST https://xray.cloud.getxray.app/api/v2/authenticate \
-            -d "{\"client_id\":\"${{ secrets.XRAY_CLIENT_ID }}\",\"client_secret\":\"${{ secrets.XRAY_CLIENT_SECRET }}\"}" | tr -d '"')
+            -d "{\"client_id\":\"${{ secrets.XRAY_CLIENT_ID }}\",\"client_secret\":\"${{ secrets.XRAY_CLIENT_SECRET }}\"}" \
+            | tr -d '"')
           echo "token=$TOKEN" >> $GITHUB_OUTPUT
 
       - name: Import JUnit into Xray (existing Test Execution)
         run: |
-          curl -v \
+          curl --fail-with-body -sS \
             -H "Authorization: Bearer ${{ steps.xray_auth.outputs.token }}" \
-            -H "Content-Type: multipart/form-data" \
-            -F "file=@results/junit.xml" \
+            -F "file=@results/junit.xml;type=application/xml" \
             "https://xray.cloud.getxray.app/api/v2/import/execution/junit?projectKey=${{ secrets.XRAY_PROJECT_KEY }}&testExecKey=${{ secrets.XRAY_TEST_EXEC_KEY }}"
+
